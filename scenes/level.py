@@ -298,10 +298,13 @@ class Level:
                             break
                 else:
                     self.arr_t += dt
-                    if self.arr_t >= arr: 
-                        self.arr_t = 0
-                        if moveable(self.mino, self.mino_x+self.dir, self.mino_y, self.board):
-                            self.mino_x += self.dir
+                    for i in range(arr*2):
+                        if self.arr_t >= arr:
+                            self.arr_t -= arr*dt
+                            if moveable(self.mino, self.mino_x+self.dir, self.mino_y, self.board):
+                                self.mino_x += self.dir
+                            if self.arr_t < 0:
+                                break
                             
         if keys[pygame.K_DOWN]:
             if sdf == 0:
@@ -312,10 +315,13 @@ class Level:
                         break
             else:
                 self.sdf_t += dt
-                if self.sdf_t > sdf:
-                    self.sdf_t = 0
-                    if moveable(self.mino, self.mino_x, self.mino_y+1, self.board):
-                        self.mino_y += 1
+                for i in range(sdf*2):
+                    if self.sdf_t > sdf:
+                        self.sdf_t -= sdf*dt
+                        if moveable(self.mino, self.mino_x, self.mino_y+1, self.board):
+                            self.mino_y += 1
+                        if self.sdf_t < 0:
+                            break
 
         self.mino_y_t += dt/64
         if self.mino_y_t >= 1:
