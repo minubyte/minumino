@@ -184,7 +184,7 @@ class Level:
         self.lock_t = 0
 
         self.dir = 0
-        self.r_dir = 0
+        self.r_dir = 99
 
         self.board = [[0 for _ in range(10)] for _ in range(20+board_over)]
 
@@ -298,7 +298,7 @@ class Level:
                             break
                 else:
                     self.arr_t += dt
-                    for i in range(int(arr)*2):
+                    for i in range(int(arr+1)*2):
                         if self.arr_t >= arr:
                             self.arr_t -= arr
                             if self.arr_t < 0:
@@ -315,7 +315,7 @@ class Level:
                         break
             else:
                 self.sdf_t += dt
-                for i in range(int(sdf)*2):
+                for i in range(int(sdf+1)*2):
                     if self.sdf_t > sdf:
                         self.sdf_t -= sdf
                         if self.sdf_t < 0:
