@@ -6,7 +6,7 @@ unit = 24
 
 das = 7
 arr = 1
-sdf = 0
+sdf = 0.5
 board_over = 4
 
 skin_img = pygame.image.load("data/skin.png").convert()
@@ -298,7 +298,7 @@ class Level:
                             break
                 else:
                     self.arr_t += dt
-                    for i in range(arr*2):
+                    for i in range(int(arr)*2):
                         if self.arr_t >= arr:
                             self.arr_t -= arr
                             if self.arr_t < 0:
@@ -315,7 +315,7 @@ class Level:
                         break
             else:
                 self.sdf_t += dt
-                for i in range(sdf*2):
+                for i in range(int(sdf)*2):
                     if self.sdf_t > sdf:
                         self.sdf_t -= sdf
                         if self.sdf_t < 0:
