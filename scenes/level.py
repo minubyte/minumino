@@ -1,13 +1,19 @@
 import pygame
 import random
+import easing_functions
 from utils import *
 
 unit = 24
 
 das = 7
 arr = 1
-sdf = 0.5
+sdf = 0.3
 board_over = 4
+countdown_delay = 20
+k = easing_functions.ElasticEaseOut(1, 0, 1)
+
+by_amt = 1.5
+bx_amt = 4
 
 skin_img = pygame.image.load("data/skin.png").convert()
 
@@ -110,6 +116,26 @@ JLTSZ_OFFSETS = {
     "33": [(0, 0)]
 }
 
+class Text:
+    def __init__(self, screen, text, x=100, y=100, color="#000000", font=font32, center=False, dx=0, dy=0, life=60):
+        self.screen = screen
+        self.text = text
+        self.x = x
+        self.y = y
+        self.color = color
+        self.dx = dx
+        self.dy = dy
+        self.life = life
+        self.life_m = life
+        self.font = font
+        self.center = center
+    
+    def update(self, dt):
+        self.dx *= 0.8**dt
+        self.dy *= 0.8**dt
+        self.life -= dt
+        return int((self.life/self.life_m)*255)
+
 def moveable(mino, dx, dy, board):
     for y, row in enumerate(mino):
         for x, dot in enumerate(row):
@@ -150,14 +176,17 @@ def lock(mino_t, mino, dx, dy, board):
                 board[y+dy+board_over][x+dx] = ids[str(mino_t)]
 
 def line_clear(board):
+    clear_count = 0
     for row in board:
         clear = True
         for dot in row:
             if dot == 0:
                 clear = False
         if clear:
+            clear_count += 1
             board.remove(row)
             board.insert(0, [0 for i in range(10)])
+    return clear_count
 
 class Level:
     def __init__(self, screen, gm):
@@ -166,11 +195,15 @@ class Level:
         self.cx = screen_width/2-unit*5 
         self.cy = screen_height/2-unit*10
 
-        next_minos = ALL_BLOCKS[:]
-        random.shuffle(next_minos)
-        self.next = [*next_minos]
+        self.bx = 0
+        self.by = 0
+        self.bya = 0
+        self.b_t = 1
+        self.b = False
 
-        self.mino_t = self.next.pop(0)
+        self.next = []
+
+        self.mino_t = []
         self.mino = self.mino_t[:]
         self.mino_x = 3
         self.mino_y_t = 0
@@ -197,25 +230,54 @@ class Level:
         self.mino_oy = 0
         self.mino_or = 0
 
+        self.countdown = 0
+        self.countdown_t = 0
+        self.started = False
+        self.reset()
+
+        self.texts = []
+
+    def set_bag(self):
+        next_minos = ALL_BLOCKS[:]
+        random.shuffle(next_minos)
+        self.next += next_minos
+
+    def reset(self):
+        self.next = []
+        self.set_bag()
+        self.countdown = 0
+        self.countdown_t = 0
+        self.started = False
+        self.board = [[0 for _ in range(10)] for _ in range(20+board_over)]
+        self.hold = None
+
+    def bounce(self, x, y):
+        self.bx = max(self.bx, x)
+        if x < 0:
+            self.bx = -max(abs(self.bx), abs(x))
+        if y > 0:
+            self.b_t = 0
+            self.bya = y
+
     def set(self, mino=None):
+        if len(self.next) <= 5:
+            self.set_bag()
         if mino == None:
             self.mino_t = self.next.pop(0)
         else:
             self.mino_t = mino
         self.mino = self.mino_t[:]
-        if len(self.next) <= 5:
-            next_minos = ALL_BLOCKS[:]
-            random.shuffle(next_minos)
-            self.next += next_minos
 
         self.mino_x = 3
         self.mino_y_t = 0
         self.mino_y = -3
         self.mino_r = 0
+        self.r_dir = 99
 
         self.holdable = True
 
-        line_clear(self.board)
+        clear_count = line_clear(self.board)+1
+        self.bounce(0, by_amt*clear_count)
         self.reset_shadow()
 
     def reset_shadow(self):
@@ -233,9 +295,34 @@ class Level:
 
     def run(self, dt, events):
         self.screen.fill("#3A3A3A")
+    
+        self.bx *= 0.8**dt
+        if self.b_t <= 1:
+            self.by = k(self.b_t)*by_amt*self.bya
+            self.b_t += dt/80
+        # if self.b_t <= 0.3:
+        #     self.by = k(self.b_t)*by_amt*self.bya
+        #     self.b_t += dt/80
+        # else:
+        #     self.by *= 0.6**dt
+
+        if not self.started:
+            self.countdown_t -= dt
+            countdown_text = ""
+            if self.countdown_t <= 0:
+                self.countdown_t = countdown_delay
+                self.countdown += 1
+                countdown_text = str(4-self.countdown)
+            if self.countdown >= 4:
+                self.started = True
+                self.set()
+                countdown_text = "GO!"
+            self.texts.append(Text(self.screen, countdown_text, screen_width/2+10, screen_height/2.5, "#eeeeee", font128, True, 0, 20, countdown_delay))
 
         for event in events:
             if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_r:
+                    self.reset()
                 if event.key == pygame.K_RIGHT:
                     self.dir = 1
                 if event.key == pygame.K_LEFT:
@@ -246,113 +333,123 @@ class Level:
                     self.r_dir = -1
                 if event.key == pygame.K_a:
                     self.r_dir = 0
-                if event.key == pygame.K_SPACE:
+                if self.started:
+                    if event.key == pygame.K_SPACE:
+                        for i in range(1, 20+board_over):
+                            if moveable(self.mino, self.mino_x, self.mino_y+1, self.board):
+                                self.mino_y += 1
+                            else:
+                                break
+                        lock(self.mino_t, self.mino, self.mino_x, self.mino_y, self.board)
+                        self.lock_t = 0
+                        self.set()
+                    if event.key == pygame.K_LSHIFT and self.holdable:
+                        if self.hold == None:
+                            self.hold = self.mino_t[:]
+                            self.set()
+                        else:
+                            hold_mino = self.mino_t[:]
+                            self.set(self.hold)
+                            self.hold = hold_mino[:]
+                        self.holdable = False
+
+                    if self.r_dir != 99:
+                        rotated = rotateable(self.mino_t, self.mino, self.mino_x, self.mino_y, self.board, self.mino_r, self.r_dir)
+                        if rotated:
+                            self.mino_r = (self.mino_r+self.r_dir)%4
+                            self.mino_x, self.mino_y = rotated
+                            self.mino = rotate(self.mino, self.r_dir)
+                            self.lock_t = 0
+                        self.r_dir = 99
+                        self.reset_shadow()
+                    if event.key == pygame.K_RIGHT or event.key == pygame.K_LEFT:
+                        if moveable(self.mino, self.mino_x+self.dir, self.mino_y, self.board):
+                            self.mino_x += self.dir
+                        self.das_t = 0
+                        self.arr_t = 0
+                        self.lock_t = 0
+                        self.b = 0
+
+        if self.started:
+            keys = pygame.key.get_pressed()
+            if keys[pygame.K_RIGHT] or keys[pygame.K_LEFT]:
+                if keys[pygame.K_RIGHT]:
+                    self.dir = 1
+                else:
+                    self.dir = -1
+                if self.das_t < das:
+                    self.das_t += dt
+                else:
+                    if arr == 0:
+                        for i in range(0, 10):
+                            if moveable(self.mino, self.mino_x+self.dir, self.mino_y, self.board):
+                                self.mino_x += self.dir
+                            else:
+                                break
+                    else:
+                        self.arr_t += dt
+                        for i in range(int(arr+1)*2):
+                            if self.arr_t >= arr:
+                                self.arr_t -= arr
+                                if self.arr_t < 0:
+                                    break
+                                if moveable(self.mino, self.mino_x+self.dir, self.mino_y, self.board):
+                                    self.mino_x += self.dir
+                                    self.b += abs(self.dir)/10
+                                else:
+                                    if self.b > 0:
+                                        self.bounce(bx_amt*self.dir*self.b, 0)
+                                        self.b = 0
+                            
+            if keys[pygame.K_DOWN]:
+                if sdf == 0:
                     for i in range(1, 20+board_over):
                         if moveable(self.mino, self.mino_x, self.mino_y+1, self.board):
                             self.mino_y += 1
                         else:
                             break
+                else:
+                    self.sdf_t += dt
+                    for i in range(int(sdf+1)*2):
+                        if self.sdf_t > sdf:
+                            self.sdf_t -= sdf
+                            if self.sdf_t < 0:
+                                break
+                            if moveable(self.mino, self.mino_x, self.mino_y+1, self.board):
+                                self.mino_y += 1
+
+            self.mino_y_t += dt/64
+            if self.mino_y_t >= 1:
+                self.mino_y_t = 0
+                if moveable(self.mino, self.mino_x, self.mino_y+1, self.board):
+                    self.mino_y += 1
+        
+            if not moveable(self.mino, self.mino_x, self.mino_y+1, self.board):
+                self.lock_t += dt
+                if self.lock_t >= 30:
                     lock(self.mino_t, self.mino, self.mino_x, self.mino_y, self.board)
                     self.lock_t = 0
+                    self.bounce(0, by_amt)
                     self.set()
-                if event.key == pygame.K_LSHIFT and self.holdable:
-                    if self.hold == None:
-                        self.hold = self.mino_t[:]
-                        self.set()
-                    else:
-                        hold_mino = self.mino_t[:]
-                        self.set(self.hold)
-                        self.hold = hold_mino[:]
-                    self.holdable = False
 
-                if self.r_dir != 99:
-                    rotated = rotateable(self.mino_t, self.mino, self.mino_x, self.mino_y, self.board, self.mino_r, self.r_dir)
-                    if rotated:
-                        self.mino_r = (self.mino_r+self.r_dir)%4
-                        self.mino_x, self.mino_y = rotated
-                        self.mino = rotate(self.mino, self.r_dir)
-                        self.lock_t = 0
-                    self.r_dir = 99
-                    self.reset_shadow()
-                if event.key == pygame.K_RIGHT or event.key == pygame.K_LEFT:
-                    if moveable(self.mino, self.mino_x+self.dir, self.mino_y, self.board):
-                        self.mino_x += self.dir
-                    self.das_t = 0
-                    self.arr_t = 0
-                    self.lock_t = 0
-
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_RIGHT] or keys[pygame.K_LEFT]:
-            if keys[pygame.K_RIGHT]:
-                self.dir = 1
-            else:
-                self.dir = -1
-            if self.das_t < das:
-                self.das_t += dt
-            else:
-                if arr == 0:
-                    for i in range(0, 10):
-                        if moveable(self.mino, self.mino_x+self.dir, self.mino_y, self.board):
-                            self.mino_x += self.dir
-                        else:
-                            break
-                else:
-                    self.arr_t += dt
-                    for i in range(int(arr+1)*2):
-                        if self.arr_t >= arr:
-                            self.arr_t -= arr
-                            if self.arr_t < 0:
-                                break
-                            if moveable(self.mino, self.mino_x+self.dir, self.mino_y, self.board):
-                                self.mino_x += self.dir
-                            
-        if keys[pygame.K_DOWN]:
-            if sdf == 0:
-                for i in range(1, 20+board_over):
-                    if moveable(self.mino, self.mino_x, self.mino_y+1, self.board):
-                        self.mino_y += 1
-                    else:
-                        break
-            else:
-                self.sdf_t += dt
-                for i in range(int(sdf+1)*2):
-                    if self.sdf_t > sdf:
-                        self.sdf_t -= sdf
-                        if self.sdf_t < 0:
-                            break
-                        if moveable(self.mino, self.mino_x, self.mino_y+1, self.board):
-                            self.mino_y += 1
-
-        self.mino_y_t += dt/64
-        if self.mino_y_t >= 1:
-            self.mino_y_t = 0
-            if moveable(self.mino, self.mino_x, self.mino_y+1, self.board):
-                self.mino_y += 1
-    
-        if not moveable(self.mino, self.mino_x, self.mino_y+1, self.board):
-            self.lock_t += dt
-            if self.lock_t >= 30:
-                lock(self.mino_t, self.mino, self.mino_x, self.mino_y, self.board)
-                self.lock_t = 0
-                self.set()
-
-        if self.mino_x != self.mino_ox or self.mino_y != self.mino_oy or self.mino_r != self.mino_or:
-            self.reset_shadow()
+            if self.mino_x != self.mino_ox or self.mino_y != self.mino_oy or self.mino_r != self.mino_or:
+                self.reset_shadow()
 
         for i in range(0, 20+1):
-            pygame.draw.line(self.screen, "#4f4f4f", (self.cx, self.cy+i*unit), (self.cx+10*unit, self.cy+i*unit), 2)
+            pygame.draw.line(self.screen, "#4f4f4f", (self.cx+self.bx, self.cy+self.by+i*unit), (self.cx+self.bx+10*unit, self.cy+self.by+i*unit), 2)
         for i in range(0, 10+1):
-            pygame.draw.line(self.screen, "#4f4f4f", (self.cx+i*unit, self.cy), (self.cx+i*unit, self.cy+20*unit), 2)
-                
-        for y, row in enumerate(self.shadow_mino):
-            for x, dot in enumerate(row):
-                if dot != 0:
-                    self.screen.blit(imgs["B"], (self.cx+(self.mino_x+x)*unit, self.cy+(self.shadow_mino_y+y)*unit))
+            pygame.draw.line(self.screen, "#4f4f4f", (self.cx+self.bx+i*unit, self.cy+self.by), (self.cx+self.bx+i*unit, self.cy+self.by+20*unit), 2)
+            
+        if self.started:
+            for y, row in enumerate(self.shadow_mino):
+                for x, dot in enumerate(row):
+                    if dot != 0:
+                        self.screen.blit(imgs["B"], (self.cx+self.bx+(self.mino_x+x)*unit, self.cy+self.by+(self.shadow_mino_y+y)*unit))
 
-        for y, row in enumerate(self.mino):
-            for x, dot in enumerate(row):
-                if dot != 0:
-                    self.screen.blit(imgs[ids[str(self.mino_t)]], (self.cx+(self.mino_x+x)*unit, self.cy+(self.mino_y+y)*unit))
+            for y, row in enumerate(self.mino):
+                for x, dot in enumerate(row):
+                    if dot != 0:
+                        self.screen.blit(imgs[ids[str(self.mino_t)]], (self.cx+self.bx+(self.mino_x+x)*unit, self.cy+self.by+(self.mino_y+y)*unit))
         
         if self.hold != None:
             offset_x = 0.5
@@ -360,10 +457,12 @@ class Level:
             if self.hold == I:
                 offset_x = 0
                 offset_y = -0.5
+            elif self.hold == O:
+                offset_x = 0
             for y, row in enumerate(self.hold):
                 for x, dot in enumerate(row):
                     if dot != 0:
-                        self.screen.blit(imgs[ids[str(self.hold)]], ((self.cx+(x-5+offset_x)*unit, self.cy+(y+offset_y)*unit)))
+                        self.screen.blit(imgs[ids[str(self.hold)]], ((self.cx+self.bx+(x-5+offset_x)*unit, self.cy+self.by+(y+offset_y)*unit)))
 
         for i, mino in enumerate(self.next[:5]):
             offset_x = 0.5
@@ -371,12 +470,19 @@ class Level:
             if mino == I:
                 offset_x = 0
                 offset_y = -0.5
+            elif mino == O:
+                offset_x = 0
             for y, row in enumerate(mino):
                 for x, dot in enumerate(row):
                     if dot != 0:
-                        self.screen.blit(imgs[ids[str(mino)]], ((self.cx+(11+x+offset_x)*unit, self.cy+(i*3+y+offset_y)*unit)))
+                        self.screen.blit(imgs[ids[str(mino)]], ((self.cx+self.bx+(11+x+offset_x)*unit, self.cy+self.by+(i*3+y+offset_y)*unit)))
                     
         for y, row in enumerate(self.board):
             for x, dot in enumerate(row):
                 if dot != 0:
-                    self.screen.blit(imgs[dot], ((self.cx+x*unit, self.cy+(y-board_over)*unit)))
+                    self.screen.blit(imgs[dot], ((self.cx+self.bx+x*unit, self.cy+self.by+(y-board_over)*unit)))
+
+        for text in reversed(self.texts):
+            if text.life <= 0:
+                self.texts.remove(text)
+            draw_text(self.screen, text.text, text.x+text.dx, text.y+text.dy, text.color, text.font, text.center, text.update(dt))
