@@ -1,5 +1,6 @@
 import pygame
 import random
+import math
 import easing_functions
 from utils import *
 
@@ -7,7 +8,7 @@ unit = 24
 
 das = 7
 arr = 1
-sdf = 0.3
+sdf = 0.4
 board_over = 4
 countdown_delay = 20
 k = easing_functions.ElasticEaseOut(1, 0, 1)
@@ -30,6 +31,16 @@ imgs = {
 
 for i, img in enumerate(imgs):
     imgs[img].blit(skin_img, (-unit*i, 0))
+
+colors = {
+    "I": "#42AFE1",
+    "J": "#1165B5",
+    "L": "#F38927",
+    "O": "#F6D03C",
+    "S": "#51B84D",
+    "T": "#B94BC6",
+    "Z": "#EB4F65"
+}
 
 I = [
     [0, 0, 0, 0],
@@ -116,6 +127,22 @@ JLTSZ_OFFSETS = {
     "33": [(0, 0)]
 }
 
+class Particle:
+    def __init__(self, x, y, size, angle, speed, color="#eeeeee", outline=0):
+        self.x = x
+        self.y = y
+        self.size = size
+        self.angle = angle
+        self.speed = speed
+        self.color = color
+        self.outline = outline
+    
+    def update(self, dt):
+        self.x += math.cos(self.angle)*self.speed
+        self.y += math.sin(self.angle)*self.speed
+        self.speed *= 0.9**dt
+        self.size *= 0.9**dt
+
 class Text:
     def __init__(self, screen, text, x=100, y=100, color="#000000", font=font32, center=False, dx=0, dy=0, life=60):
         self.screen = screen
@@ -169,25 +196,6 @@ def rotate(mino, dr):
     else:
         return rotate(rotate(mino, 1), 1)
 
-def lock(mino_t, mino, dx, dy, board):
-    for y, row in enumerate(mino):
-        for x, dot in enumerate(row):
-            if dot != 0:
-                board[y+dy+board_over][x+dx] = ids[str(mino_t)]
-
-def line_clear(board):
-    clear_count = 0
-    for row in board:
-        clear = True
-        for dot in row:
-            if dot == 0:
-                clear = False
-        if clear:
-            clear_count += 1
-            board.remove(row)
-            board.insert(0, [0 for i in range(10)])
-    return clear_count
-
 class Level:
     def __init__(self, screen, gm):
         self.screen: pygame.Surface = screen
@@ -236,6 +244,31 @@ class Level:
         self.reset()
 
         self.texts = []
+        self.particles = []
+
+    def line_clear(self):
+        clear_count = 0
+        for y, row in enumerate(self.board):
+            clear = True
+            for dot in row:
+                if dot == 0:
+                    clear = False
+            if clear:
+                clear_count += 1
+                self.board.remove(row)
+                self.board.insert(0, [0 for i in range(10)])
+                for x in range(10):
+                    self.particles.append(Particle(self.cx+self.bx+x*unit, self.cy+self.by+(y-board_over)*unit, random.randint(2, 10), random.randint(1, 360), random.randint(1, 2), "#eeeeee"))
+        return clear_count
+
+    def lock(self):
+        self.lock_t = 0
+        for y, row in enumerate(self.mino):
+            for x, dot in enumerate(row):
+                if dot != 0:
+                    self.board[y+self.mino_y+board_over][x+self.mino_x] = ids[str(self.mino_t)]
+                    color = colors[ids[str(self.mino_t)]]
+                    self.particles.append(Particle(self.cx+self.bx+(self.mino_x+x)*unit, self.cy+self.by+(self.mino_y+y)*unit, random.randint(2, 10), random.randint(1, 360), random.randint(1, 3), color))
 
     def set_bag(self):
         next_minos = ALL_BLOCKS[:]
@@ -276,7 +309,7 @@ class Level:
 
         self.holdable = True
 
-        clear_count = line_clear(self.board)+1
+        clear_count = self.line_clear()+1
         self.bounce(0, by_amt*clear_count)
         self.reset_shadow()
 
@@ -294,17 +327,17 @@ class Level:
                 break
 
     def run(self, dt, events):
-        self.screen.fill("#3A3A3A")
+        self.screen.fill("#3B3B3B")
     
         self.bx *= 0.8**dt
-        if self.b_t <= 1:
-            self.by = k(self.b_t)*by_amt*self.bya
-            self.b_t += dt/80
-        # if self.b_t <= 0.3:
+        # if self.b_t <= 1:
         #     self.by = k(self.b_t)*by_amt*self.bya
         #     self.b_t += dt/80
-        # else:
-        #     self.by *= 0.6**dt
+        if self.b_t <= 0.4:
+            self.by = k(self.b_t)*by_amt*self.bya
+            self.b_t += dt/80
+        else:
+            self.by *= 0.2**dt
 
         if not self.started:
             self.countdown_t -= dt
@@ -340,9 +373,9 @@ class Level:
                                 self.mino_y += 1
                             else:
                                 break
-                        lock(self.mino_t, self.mino, self.mino_x, self.mino_y, self.board)
-                        self.lock_t = 0
+                        self.lock()
                         self.set()
+                        
                     if event.key == pygame.K_LSHIFT and self.holdable:
                         if self.hold == None:
                             self.hold = self.mino_t[:]
@@ -395,7 +428,7 @@ class Level:
                                     break
                                 if moveable(self.mino, self.mino_x+self.dir, self.mino_y, self.board):
                                     self.mino_x += self.dir
-                                    self.b += abs(self.dir)/10
+                                    self.b += abs(self.dir)/15
                                 else:
                                     if self.b > 0:
                                         self.bounce(bx_amt*self.dir*self.b, 0)
@@ -427,8 +460,7 @@ class Level:
             if not moveable(self.mino, self.mino_x, self.mino_y+1, self.board):
                 self.lock_t += dt
                 if self.lock_t >= 30:
-                    lock(self.mino_t, self.mino, self.mino_x, self.mino_y, self.board)
-                    self.lock_t = 0
+                    self.lock()
                     self.bounce(0, by_amt)
                     self.set()
 
@@ -486,3 +518,15 @@ class Level:
             if text.life <= 0:
                 self.texts.remove(text)
             draw_text(self.screen, text.text, text.x+text.dx, text.y+text.dy, text.color, text.font, text.center, text.update(dt))
+
+        for particle in reversed(self.particles):
+            if particle.size <= 0.1:
+                self.particles.remove(particle)
+            rect = [
+                int(particle.x-particle.size),
+                int(particle.y-particle.size),
+                int(particle.size*2),
+                int(particle.size*2)
+            ]
+            pygame.draw.rect(self.screen, particle.color, rect, particle.outline)
+            particle.update(dt)
