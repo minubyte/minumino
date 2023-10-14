@@ -62,8 +62,8 @@ L = [
 ]
 
 O = [
-    [0, "O", "O", 0],
-    [0, "O", "O", 0]
+    ["O", "O"],
+    ["O", "O"]
 ]
 
 S = [
@@ -302,6 +302,8 @@ class Level:
         self.mino = self.mino_t[:]
 
         self.mino_x = 3
+        if self.mino_t == O:
+            self.mino_x = 4
         self.mino_y_t = 0
         self.mino_y = -3
         self.mino_r = 0
@@ -490,7 +492,7 @@ class Level:
                 offset_x = 0
                 offset_y = -0.5
             elif self.hold == O:
-                offset_x = 0
+                offset_x = 1
             for y, row in enumerate(self.hold):
                 for x, dot in enumerate(row):
                     if dot != 0:
@@ -503,7 +505,7 @@ class Level:
                 offset_x = 0
                 offset_y = -0.5
             elif mino == O:
-                offset_x = 0
+                offset_x = 1
             for y, row in enumerate(mino):
                 for x, dot in enumerate(row):
                     if dot != 0:
